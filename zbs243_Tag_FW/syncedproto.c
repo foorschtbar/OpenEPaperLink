@@ -393,11 +393,12 @@ static void sendXferComplete() {
 }
 static bool validateBlockData() {
     struct blockData *bd = (struct blockData *)blockXferBuffer;
-    // pr("expected len = %04X, checksum=%04X\n", bd->size, bd->checksum);
+    //pr("expected len = %04X, checksum=%04X\n", bd->size, bd->checksum);
     uint16_t t = 0;
     for (uint16_t c = 0; c < bd->size; c++) {
         t += bd->data[c];
     }
+    //pr("calculated checksum=%04X\n", t);
     return bd->checksum == t;
 }
 
@@ -570,6 +571,7 @@ static bool getDataBlock(const uint16_t blockSize) {
     return false;
 }
 
+static uint16_t __xdata dataRequestSize = 0; // this should be local to the function below, but again, it will not survive sleep, and only on the 2.9"... magic.
 static bool downloadFWUpdate(const struct AvailDataInfo *__xdata avail) {
     // check if we already started the transfer of this information & haven't completed it
     if (xMemEqual((const void *__xdata) & avail->dataVer, (const void *__xdata) & curDataInfo.dataVer, 8) && curDataInfo.dataSize) {
@@ -585,7 +587,6 @@ static bool downloadFWUpdate(const struct AvailDataInfo *__xdata avail) {
 
     while (curDataInfo.dataSize) {
         wdt10s();
-        static uint16_t __xdata dataRequestSize;
         if (curDataInfo.dataSize > BLOCK_DATA_SIZE) {
             // more than one block remaining
             dataRequestSize = BLOCK_DATA_SIZE;
