@@ -166,7 +166,7 @@ struct burstMacData {
 #define BLOCK_PART_DATA_SIZE 99
 #define BLOCK_MAX_PARTS 42
 #define BLOCK_DATA_SIZE 4096UL
-#define BLOCK_XFER_BUFFER_SIZE BLOCK_DATA_SIZE + sizeof(struct blockData)
+#define BLOCK_XFER_BUFFER_SIZE BLOCK_DATA_SIZE + sizeof(struct blockData) + 4
 #define BLOCK_REQ_PARTS_BYTES 6
 
 struct blockRequest {

@@ -5,7 +5,7 @@
 // this determines how long images will be cached;
 #define PENDING_DATA_TIMEOUT 60
 // maximum time (in minutes) that a tag is put to sleep if no update is expected.
-#define MIN_RESPONSE_TIME 10
+#define MIN_RESPONSE_TIME 0
 
 // flasher options
 #define CUSTOM_MAC_HDR 0x0000

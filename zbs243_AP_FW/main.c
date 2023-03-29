@@ -75,8 +75,41 @@ uint8_t lastAckMac[8] = {0};
 uint32_t __xdata lastBlockRequest = 0;
 uint8_t __xdata lastBlockMac[8];
 
+uint8_t __xdata doecho = 0;
+
 void sendXferCompleteAck(uint8_t *dst);
 void sendCancelXfer(uint8_t *dst);
+
+void dump(uint8_t *__xdata a, uint16_t __xdata l) {
+	// pr("        ");
+#define ROWS 16
+	/*
+	for (uint8_t c = 0; c < ROWS; c++) {
+		pr(" %02X", c);
+		timerDelay(1333);
+	}
+	pr("\n--------");
+	for (uint8_t c = 0; c < ROWS; c++) {
+		pr("---");
+		timerDelay(1333);
+	}
+	*/
+	for (uint16_t c = 0; c < l; c++) {
+		// timerDelay(1333);
+		if ((c % ROWS) == 0) {
+			pr("\n0x%04X | ", c);
+		}
+		pr("%02X ", a[c]);
+	}
+	pr("\n--------");
+	/*
+	for (uint8_t c = 0; c < ROWS; c++) {
+		pr("---");
+		timerDelay(1333);
+	}
+	*/
+	pr("\n");
+}
 
 // tools
 void addCRC(void *p, uint8_t len) {
@@ -87,39 +120,15 @@ void addCRC(void *p, uint8_t len) {
     ((uint8_t *)p)[0] = total;
     // pr("%d",total);
 }
+
 bool checkCRC(void *p, uint8_t len) {
-    uint8_t total = 0;
-    for (uint8_t c = 1; c < len; c++) {
+	uint8_t total = 0;
+	for (uint8_t c = 1; c < len; c++) {
         total += ((uint8_t *)p)[c];
     }
     return ((uint8_t *)p)[0] == total;
 }
-void dump(uint8_t *__xdata a, uint16_t __xdata l) {
-    pr("        ");
-#define ROWS 16
-    for (uint8_t c = 0; c < ROWS; c++) {
-        pr(" %02X", c);
-        timerDelay(1333);
-    }
-    pr("\n--------");
-    for (uint8_t c = 0; c < ROWS; c++) {
-        pr("---");
-        timerDelay(1333);
-    }
-    for (uint16_t c = 0; c < l; c++) {
-        timerDelay(1333);
-        if ((c % ROWS) == 0) {
-            pr("\n0x%04X | ", c);
-        }
-        pr("%02X ", a[c]);
-    }
-    pr("\n--------");
-    for (uint8_t c = 0; c < ROWS; c++) {
-        pr("---");
-        timerDelay(1333);
-    }
-    pr("\n");
-}
+
 uint8_t __xdata getPacketType(void *__xdata buffer) {
     struct MacFcs *__xdata fcs = buffer;
     if ((fcs->frameType == 1) && (fcs->destAddrType == 2) && (fcs->srcAddrType == 3) && (fcs->panIdCompressed == 0)) {
@@ -187,7 +196,7 @@ void deleteAllPendingDataForVer(const uint8_t *ver) {
 
 extern uint8_t *__idata blockp;
 void processSerial(uint8_t lastchar) {
-    // uartTx(lastchar); echo
+    if (doecho) uartTx(lastchar); //echo
     switch (RXState) {
         case ZBS_RX_WAIT_HEADER:
             // shift characters in
@@ -197,12 +206,38 @@ void processSerial(uint8_t lastchar) {
             cmdbuffer[3] = lastchar;
 
             if (strncmp(cmdbuffer + 1, ">D>", 3) == 0) {
-                blockp = blockbuffer;
-                pr("ACK>\n");
-                serialBypassActive = true;
-            }
+				memset(blockbuffer, 0, sizeof(blockbuffer));
+				blockp = blockbuffer;
+				serialBypassActive = true;
+				pr("ACK>\n"); //ready to send
+				for (uint8_t c = 0; c < 10; c++) {
+                    uint32_t blockStartTime = timerGet();
+                    while (serialBypassActive == true && (timerGet() - blockStartTime) < 400 * TIMER_TICKS_PER_MS) {
+                        //wait until block is complete or timeout
+                        timerDelay(TIMER_TICKS_PER_SECOND / 1000);
+                    }
+                    serialBypassActive == false;
 
-            if (strncmp(cmdbuffer, "SDA>", 4) == 0) {
+                    struct blockData *bd = (struct blockData *)blockbuffer;
+                    uint16_t check = bd->checksum;
+                    for (uint16_t c = 0; c < bd->size; c++) {
+                        check -= bd->data[c];
+                    }
+					pr("packet size: %d, received: %d\n", bd->size + 4, blockp - blockbuffer);
+					if (check != 0 && c < 9) {
+                        //retry block request
+						memset(blockbuffer, 0, sizeof(blockbuffer));
+						blockp = blockbuffer;
+						serialBypassActive = true;
+						pr("NOK>\n"); // receive failed
+					} else {
+						pr("ACK>\n"); // succes, or gave up
+                        break;
+					}
+				}
+			}
+
+			if (strncmp(cmdbuffer, "SDA>", 4) == 0) {
                 RXState = ZBS_RX_WAIT_SDA;
                 bytesRemain = sizeof(struct pendingData);
                 serialbufferp = serialbuffer;
@@ -223,9 +258,15 @@ void processSerial(uint8_t lastchar) {
             if (strncmp(cmdbuffer, "RSET", 4) == 0) {
                 wdtDeviceReset();
             }
-            break;
+			if (strncmp(cmdbuffer, "ECH1", 4) == 0) {
+				doecho = 1;
+			}
+			if (strncmp(cmdbuffer, "ECH0", 4) == 0) {
+				doecho = 0;
+			}
+			break;
 
-        case ZBS_RX_WAIT_SDA:
+		case ZBS_RX_WAIT_SDA:
             *serialbufferp = lastchar;
             serialbufferp++;
             bytesRemain--;
@@ -236,12 +277,12 @@ void processSerial(uint8_t lastchar) {
                     if (slot == -1) slot = findFreeSlot();
                     if (slot != -1) {
                         xMemCopyShort(&(pendingDataArr[slot]), serialbuffer, sizeof(struct pendingData));
-                        pr("ACK>\n");
+                        pr("ACK>");
                     } else {
-                        pr("NOQ>\n");
+                        pr("NOQ>");
                     }
                 } else {
-                    pr("NOK>\n");
+                    pr("NOK>");
                 }
 
                 RXState = ZBS_RX_WAIT_HEADER;
@@ -255,9 +296,9 @@ void processSerial(uint8_t lastchar) {
                 if (checkCRC(serialbuffer, sizeof(struct pendingData))) {
                     struct pendingData *pd = (struct pendingData *)serialbuffer;
                     deleteAllPendingDataForVer((uint8_t *)&pd->availdatainfo.dataVer);
-                    pr("ACK>\n");
+                    pr("ACK>");
                 } else {
-                    pr("NOK>\n");
+                    pr("NOK>");
                 }
 
                 RXState = ZBS_RX_WAIT_HEADER;
@@ -326,7 +367,10 @@ void espNotifyTimeOut(const uint8_t *src) {
 void processBlockRequest(const uint8_t *buffer, uint8_t forceBlockDownload) {
     struct MacFrameNormal *__xdata rxHeader = (struct MacFrameNormal *)buffer;
     struct blockRequest *__xdata blockReq = (struct blockRequest *)(buffer + sizeof(struct MacFrameNormal) + 1);
-    if (!checkCRC(blockReq, sizeof(struct blockRequest))) return;
+    if (!checkCRC(blockReq, sizeof(struct blockRequest))) {
+        pr("brqcrc!");
+        return;
+    }
 
     // check if we're already talking to this mac
     if (memcmp(rxHeader->src, lastBlockMac, 8) == 0) {
@@ -360,11 +404,11 @@ void processBlockRequest(const uint8_t *buffer, uint8_t forceBlockDownload) {
     } else {
         // requested block is already in the buffer
         if (forceBlockDownload) {
-            if ((timerGet() - nextBlockAttempt) > (380 * TIMER_TICKS_PER_MS)) {
+            if ((timerGet() - nextBlockAttempt) > (1000 * TIMER_TICKS_PER_MS)) {
                 requestDataDownload = true;
-                pr("FORCED\n");
+                //pr("FORCED\n");
             } else {
-                pr("IGNORED\n");
+                //pr("IGNORED\n");
             }
         }
     }
@@ -381,18 +425,18 @@ void processBlockRequest(const uint8_t *buffer, uint8_t forceBlockDownload) {
         if (requestDataDownload) {
             // check if we need to download the first block; we need to give the ESP32 some additional time to cache the file
             if (blockReq->blockId == 0) {
-                blockRequestAck->pleaseWaitMs = 200;
+                blockRequestAck->pleaseWaitMs = 350; //200;
             } else {
-                blockRequestAck->pleaseWaitMs = 100;
-            }
+				blockRequestAck->pleaseWaitMs = 250; // 100;
+			}
         } else {
             // block is already in buffer
-            blockRequestAck->pleaseWaitMs = 50;
+            blockRequestAck->pleaseWaitMs = 30; //50;
         }
     } else {
-        blockRequestAck->pleaseWaitMs = 50;
+        blockRequestAck->pleaseWaitMs = 30; //50;
     }
-    blockStartTimer = timerGet() + blockRequestAck->pleaseWaitMs * TIMER_TICKS_PER_MS;
+    blockStartTimer = timerGet() + (blockRequestAck->pleaseWaitMs) * TIMER_TICKS_PER_MS;
 
     memcpy(txHeader->src, mSelfMac, 8);
     memcpy(txHeader->dst, rxHeader->src, 8);
@@ -412,31 +456,33 @@ void processBlockRequest(const uint8_t *buffer, uint8_t forceBlockDownload) {
     memcpy(dstMac, rxHeader->src, 8);
     dstPan = rxHeader->pan;
 
-    if (requestDataDownload) {
+/*
+	pr("Req: %d [", blockReq->blockId);
+	for (uint8_t c = 0; c < BLOCK_MAX_PARTS; c++) {
+		if ((c != 0) && (c % 8 == 0)) pr("][");
+		if (blockReq->requestedParts[c / 8] & (1 << (c % 8))) {
+			pr("R");
+		} else {
+			pr(".");
+		}
+	}
+	pr("]\n");
+*/
+
+	if (requestDataDownload) {
         serialBypassActive = false;
         espBlockRequest(&requestedData);
         nextBlockAttempt = timerGet();
     }
-
-    /*
-        pr("Req: %d [", blockReq->blockId);
-        for (uint8_t c = 0; c < BLOCK_MAX_PARTS; c++) {
-            if ((c != 0) && (c % 8 == 0)) pr("][");
-            if (blockReq->requestedParts[c / 8] & (1 << (c % 8))) {
-                pr("R");
-            } else {
-                pr(".");
-            }
-        }
-        pr("]\n");
-        */
 }
 void processAvailDataReq(uint8_t *buffer) {
     struct MacFrameBcast *rxHeader = (struct MacFrameBcast *)buffer;
     struct AvailDataReq *availDataReq = (struct AvailDataReq *)(buffer + sizeof(struct MacFrameBcast) + 1);
 
-    if (!checkCRC(availDataReq, sizeof(struct AvailDataReq)))
-        return;
+    if (!checkCRC(availDataReq, sizeof(struct AvailDataReq))) {
+		pr("adrcrc!");
+		return;
+	}
 
     // prepare tx buffer to send a response
     memset(radiotxbuffer, 0, sizeof(struct MacFrameNormal) + sizeof(struct AvailDataInfo) + 2);  // 120);
@@ -511,15 +557,22 @@ void sendBlockData() {
         requestedData.requestedParts[0] |= 0x01;
     }
     uint8_t partNo = 0;
-    while (partNo < BLOCK_MAX_PARTS) {
-        for (uint8_t c = 0; (c < BLOCK_MAX_PARTS) && (partNo < BLOCK_MAX_PARTS); c++) {
-            if (requestedData.requestedParts[c / 8] & (1 << (c % 8))) {
-                sendPart(c);
-                partNo++;
-            }
-        }
-    }
+	while (partNo < BLOCK_MAX_PARTS) {
+		//pr("TX %d\n", requestedData.blockId);
+		for (uint8_t c = 0; (c < BLOCK_MAX_PARTS) && (partNo < BLOCK_MAX_PARTS); c++) {
+			//if ((c != 0) && (c % 8 == 0)) pr("][");
+			if (requestedData.requestedParts[c / 8] & (1 << (c % 8))) {
+				//pr("T");
+				sendPart(c);
+				partNo++;
+			//} else {
+				//pr(".");
+			}
+		}
+		//pr("]\n");
+	}
 }
+
 void sendXferCompleteAck(uint8_t *dst) {
     struct MacFrameNormal *frameHeader = (struct MacFrameNormal *)(radiotxbuffer + 1);
     memset(radiotxbuffer + 1, 0, sizeof(struct blockPart) + sizeof(struct MacFrameNormal));
@@ -613,8 +666,8 @@ void main(void) {
         while ((timerGet() - housekeepingTimer) < ((TIMER_TICKS_PER_SECOND * HOUSEKEEPING_INTERVAL) - 100 * TIMER_TICKS_PER_MS)) {
             int8_t ret = commsRxUnencrypted(radiorxbuffer);
             if (ret > 1) {
-                // received a packet, lets see what it is
-                switch (getPacketType(radiorxbuffer)) {
+				// received a packet, lets see what it is
+				switch (getPacketType(radiorxbuffer)) {
                     case PKT_AVAIL_DATA_REQ:
                         processAvailDataReq(radiorxbuffer);
                         break;
@@ -642,8 +695,10 @@ void main(void) {
                         pr("t=%02X\n", getPacketType(radiorxbuffer));
                         break;
                 }
-                loopCount = 10000;
-            }
+				loopCount = 10000;
+			} else if (ret < -1) {
+                pr("p=%d\n",ret);
+			}
             while (uartBytesAvail()) {
                 processSerial(uartRx());
             }
@@ -662,7 +717,7 @@ void main(void) {
                 // alleviates this problem. The radio is set back to 'receive' whenever loopCount overflows
                 RADIO_command = RADIO_CMD_RECEIVE;
             }
-        }
+		}
 
         for (uint8_t __xdata c = 0; c < MAX_PENDING_MACS; c++) {
             if (pendingDataArr[c].attemptsLeft == 1) {

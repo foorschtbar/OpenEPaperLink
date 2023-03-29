@@ -232,6 +232,25 @@ void init_web() {
         request->send(200, "application/json", json);
     });
 
+    server.on("/testserial", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (request->hasParam("echo")) {
+            String echo = request->getParam("echo")->value();
+            if (echo == "0") Serial1.print("ECH0");
+            if (echo == "1") Serial1.print("ECH1");
+            if (echo == "3") Serial1.print("ECH?");
+            if (echo == "2") {
+                Serial1.print("Lorem Ipsum is slechts een proeftekst uit het drukkerij- en zetterijwezen. Lorem Ipsum is de standaard");
+                delay(25);
+                Serial1.print(" proeftekst in deze bedrijfstak sinds de 16e eeuw, toen een onbekende drukker een zethaak met letters ");
+                delay(25);
+                Serial1.print("nam en ze door elkaar husselde om een font-catalogus te maken. Het heeft niet alleen vijf eeuwen overleefd ");
+                delay(25);
+                Serial1.print("maar is ook, vrijwel onveranderd, overgenomen in elektronische letterzetting. Het is in de jaren '60 populair geworden met de introductie van Letraset vellen met Lorem Ipsum passages en meer recentelijk door desktop publishing software zoals Aldus PageMaker die versies van Lorem Ipsum bevatten.");
+            }
+        }
+        request->send(200, "text/plain", "Ok");
+    });
+
     server.on("/save_cfg", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (request->hasParam("mac", true)) {
             String dst = request->getParam("mac", true)->value();
@@ -308,7 +327,11 @@ void doImageUpload(AsyncWebServerRequest *request, String filename, size_t index
                 tagRecord *taginfo = nullptr;
                 taginfo = tagRecord::findByMAC(mac);
                 if (taginfo != nullptr) {
-                    taginfo->modeConfigJson = "{\"filename\":\"" + dst + ".jpg\",\"timetolive\":\"0\"}";
+                    String ditheropt;
+                    if (request->hasParam("dither", true)) {
+                        if (request->getParam("dither", true)->value() == "0") ditheropt = ",\"dither\":false";
+                    }
+                    taginfo->modeConfigJson = "{\"filename\":\"" + dst + ".jpg\",\"timetolive\":\"0\"" + ditheropt +"}";
                     taginfo->contentMode = 0;
                     taginfo->nextupdate = 0;
                     wsSendTaginfo(mac);

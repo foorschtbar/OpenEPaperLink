@@ -12,9 +12,11 @@ void uartInit(void) {
     // configure baud rate
     UARTBRGH = 0x00;
 #ifdef AP_FW
-    //UARTBRGL = 69;  // nice. 230400 baud
-    UARTBRGL = 70; // 79 == 200k
-    IEN_UART0 = 1;
+	UARTBRGL = 63; // 250000 baud
+	//UARTBRGL = 69; // 230400 baud
+	//UARTBRGL = 79; // 200000 baud
+	//UARTBRGL = 138; // 115200 baud
+	IEN_UART0 = 1;
 #else
     UARTBRGL = 0x8A;  // config for 115200
 #endif
@@ -68,38 +70,24 @@ uint8_t* __idata blockp;
 uint8_t __idata cmd[3];
 volatile bool __idata serialBypassActive = false;
 
-void checkcommand(uint8_t rx) {
-    for (uint8_t c = 0; c < 2; c++) {
-        cmd[c] = cmd[c + 1];
-    }
-    cmd[2] = rx;
-    if (strncmp(cmd, ">D>", 3) == 0) {
-        blockp = blockbuffer;
-        serialBypassActive = true;
-    }
-}
-
 void UART_IRQ1(void) __interrupt(0) {
     if (UARTSTA & 1) {  // RXC
-        UARTSTA &= 0xfe;
         if (serialBypassActive) {
-            *blockp++ = UARTBUF;
+            *blockp++ = UARTBUF ^ 0xAA;
             if (blockp == (blockbuffer + 4100)) {
                 serialBypassActive = false;
-                blockp = blockbuffer;
             }
         } else {
-            rxbuf[rxhead] = UARTBUF;
-            rxhead++;
-            //checkcommand(UARTBUF);
+            rxbuf[rxhead++] = UARTBUF;
         }
-    }
-    if (UARTSTA & 2) {  // TXC
-        UARTSTA &= 0xfd;
-        txtail++;
-        if (txhead != txtail) {
+		UARTSTA &= 0xfe;
+	}
+	if (UARTSTA & 2) {  // TXC
+		UARTSTA &= 0xfd;
+		txtail++;
+		if (txhead != txtail) {
             UARTBUF = txbuf[txtail];
         }
-    }
+	}
 }
 #endif

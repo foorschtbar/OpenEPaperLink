@@ -50,6 +50,7 @@ void prepareCancelPending(uint64_t ver) {
 }
 
 void prepareIdleReq(uint8_t* dst, uint16_t nextCheckin) {
+    if (MIN_RESPONSE_TIME == 0) return;
     if (nextCheckin > MIN_RESPONSE_TIME) {
         // to prevent very long sleeps of the tag
         nextCheckin = MIN_RESPONSE_TIME;
@@ -123,7 +124,7 @@ bool prepareDataAvail(String* filename, uint8_t dataType, uint8_t* dst, uint16_t
     time_t now;
     time(&now);
     time_t last_midnight = now - now % (24 * 60 * 60) + 3 * 3600;  // somewhere in the middle of the night
-    if (taginfo->lastfullupdate < last_midnight) {
+    if (taginfo->lastfullupdate < last_midnight || taginfo->hwType == SOLUM_42_033) {
         lut = EPD_LUT_DEFAULT;  // full update once a day
         taginfo->lastfullupdate = now;
     }
@@ -216,7 +217,7 @@ void processBlockRequest(struct espBlockRequest* br) {
     char buffer[150];
     sprintf(buffer, "< Block Request received for file %s block %d, len %d checksum %u\0", pd->filename.c_str(), br->blockId, len, checksum);
     wsLog((String)buffer);
-    Serial.printf("< Block Request received for MD5 %llu, file %s block %d, len %d checksum %u\n", br->ver, pd->filename.c_str(), br->blockId, len, checksum);
+    Serial.printf("<Block req %d %s\n", br->blockId, pd->filename.c_str());
 }
 
 void processXferComplete(struct espXferComplete* xfc) {
