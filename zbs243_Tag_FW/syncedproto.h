@@ -2,7 +2,7 @@
 #define SYNCED_H
 
 #include <stdint.h>
-//#include "settings.h"
+// #include "settings.h"
 
 extern uint8_t __xdata mSelfMac[];
 extern uint8_t __xdata currentChannel;
@@ -20,5 +20,7 @@ extern void drawImageFromEeprom(const uint8_t imgSlot);
 extern bool processAvailDataInfo(struct AvailDataInfo *__xdata avail);
 extern void initializeProto();
 extern uint8_t detectAP(const uint8_t channel);
+extern bool lastImageAvailable();
+extern void restoreLastImage();
 
 #endif
