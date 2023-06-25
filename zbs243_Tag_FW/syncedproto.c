@@ -571,10 +571,26 @@ static uint32_t getAddressForLastDataVer()
 
 void saveLastDataVer(const uint8_t *__xdata ver)
 {
-    pr("Save last data ver: %02X%02X%02X%02X%02X%02X%02X%02X\n", ver[0], ver[1], ver[2], ver[3], ver[4], ver[5], ver[6], ver[7]);
-    eepromErase(getAddressForLastDataVer(), 1);
-    if (!eepromWrite(getAddressForLastDataVer(), (void *)ver, 8))
-        pr("EEPROM write failed\n");
+    pr("Save last data ver: %02x%02x%02x%02x%02x%02x%02x%02x\n", ver[0], ver[1], ver[2], ver[3], ver[4], ver[5], ver[6], ver[7]);
+    for (uint8_t i = 0; i <= 5; i++)
+    {
+        eepromErase(getAddressForLastDataVer(), 1);
+        if (!eepromWrite(getAddressForLastDataVer(), (void *)ver, 8))
+        {
+            pr("EEPROM write command failed\n");
+        }
+        uint8_t __xdata readVer[8] = {0};
+        eepromRead(getAddressForLastDataVer(), readVer, 8);
+        if (xMemEqual(readVer, (void *)ver, 8))
+        {
+            pr("EEPROM write success\n");
+            break;
+        }
+        else
+        {
+            pr("EEPROM validation failed\n");
+        }
+    }
 }
 
 void validateLastDataVer()
@@ -593,7 +609,7 @@ void validateLastDataVer()
 void getLastDataVer()
 {
     eepromRead(getAddressForLastDataVer(), lastDataVer, 8);
-    pr("Load last data ver: %02X%02X%02X%02X%02X%02X%02X%02X\n", lastDataVer[0], lastDataVer[1], lastDataVer[2], lastDataVer[3], lastDataVer[4], lastDataVer[5], lastDataVer[6], lastDataVer[7]);
+    pr("Load last data ver: %02x%02x%02x%02x%02x%02x%02x%02x\n", lastDataVer[0], lastDataVer[1], lastDataVer[2], lastDataVer[3], lastDataVer[4], lastDataVer[5], lastDataVer[6], lastDataVer[7]);
     validateLastDataVer();
 }
 
@@ -607,6 +623,7 @@ void restoreLastImage()
     pr("restoring last image from slot %d\n", lastDataImageSlot);
     if (lastDataImageSlot != 0xFF)
     {
+        curImgSlot = lastDataImageSlot;
         wdt60s();
         powerUp(INIT_EPD | INIT_EEPROM);
         drawImageFromEeprom(lastDataImageSlot);
@@ -951,6 +968,7 @@ bool processAvailDataInfo(struct AvailDataInfo *__xdata avail)
         // check if we've seen this version before
         powerUp(INIT_EEPROM);
         curImgSlot = findSlot(&(avail->dataVer));
+        saveLastDataVer(&(avail->dataVer));
         powerDown(INIT_EEPROM);
         if (curImgSlot != 0xFF)
         {
@@ -969,7 +987,6 @@ bool processAvailDataInfo(struct AvailDataInfo *__xdata avail)
             wdt60s();
             powerUp(INIT_EPD | INIT_EEPROM);
             drawImageFromEeprom(curImgSlot);
-            saveLastDataVer(&(avail->dataVer));
             powerDown(INIT_EPD | INIT_EEPROM);
             return true;
         }
@@ -989,7 +1006,6 @@ bool processAvailDataInfo(struct AvailDataInfo *__xdata avail)
                 wdt60s();
                 powerUp(INIT_EPD | INIT_EEPROM);
                 drawImageFromEeprom(curImgSlot);
-                saveLastDataVer(&(avail->dataVer));
                 powerDown(INIT_EPD | INIT_EEPROM);
                 return true;
             }

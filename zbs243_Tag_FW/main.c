@@ -210,7 +210,7 @@ void checkI2C()
     }
     else
     {
-        pr("I2C: No devices found");
+        pr("I2C: No devices found\n");
         // didn't find a NFC chip on the expected ID
         powerDown(INIT_I2C);
     }
@@ -438,10 +438,7 @@ void main()
 
     // get our own mac address. this is stored in Infopage at offset 0x10-onwards
     boardGetOwnMac(mSelfMac);
-    pr("MAC>%02X%02X", mSelfMac[0], mSelfMac[1]);
-    pr("%02X%02X", mSelfMac[2], mSelfMac[3]);
-    pr("%02X%02X", mSelfMac[4], mSelfMac[5]);
-    pr("%02X%02X\n", mSelfMac[6], mSelfMac[7]);
+    pr("MAC>     %02x%02x%02x%02x%02x%02x%02x%02x\n", mSelfMac[7], mSelfMac[6], mSelfMac[5], mSelfMac[4], mSelfMac[3], mSelfMac[2], mSelfMac[1], mSelfMac[0]);
 
     // load settings from infopage
     loadSettings();
@@ -532,7 +529,14 @@ void main()
     }
     else
     {
-        showNoAP();
+        if (lastImageAvailable())
+        {
+            restoreLastImage();
+        }
+        else
+        {
+            showNoAP();
+        }
         initPowerSaving(INTERVAL_AT_MAX_ATTEMPTS);
         powerDown(INIT_EPD | INIT_UART);
         currentTagMode = TAG_MODE_CHANSEARCH;
